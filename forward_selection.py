@@ -1,43 +1,51 @@
-from tempfile import tempdir
-from helper import evaluation
-import pandas as pd 
+import csv
 
-def forward_selection(data, filename):
-    n = data.shape[1]
-    considered_features = []
-    global_accuracy = 0
-    global_features = []
-    dict = {'Features':[],
-        'Accuracy':[],
-       }
-  
-    df = pd.DataFrame(dict)
-    for _ in range(1,n):
-        selected_features = []
-        local_accuracy = 0
+from helper import evaluate_subset
 
-        for x in range(1, n):
-            if x in considered_features:
+
+def forward_selection(data, run_name):
+    """Greedy forward feature selection with leave-one-out 1-NN scoring."""
+    n_features_total = data.shape[1] - 1
+    selected = []
+    best_global_features = []
+    best_global_accuracy = -1.0
+    rows = []
+
+    for _ in range(n_features_total):
+        best_local_feature = None
+        best_local_accuracy = -1.0
+
+        for feature_idx in range(1, n_features_total + 1):
+            if feature_idx in selected:
                 continue
-            test_features = [0] + considered_features + [x]
-            accuracy = evaluation(data[:,test_features])
-            print("Features Considered : {features} with accuracy {accuracy}%".format(features=considered_features+[x], accuracy=accuracy))
-            df_2=pd.DataFrame({'Features': [considered_features+[x]] , 'Accuracy': [accuracy]})
-            df=df.append(df_2)
 
-            if accuracy > local_accuracy:
-                local_accuracy = accuracy
-                selected_features = x 
+            candidate = selected + [feature_idx]
+            accuracy = evaluate_subset(data, candidate)
+            rows.append({"features": candidate.copy(), "accuracy": round(accuracy, 6)})
+            print(f"Features considered: {candidate} -> accuracy {accuracy:.4f}%")
 
-        if selected_features:
-            considered_features.append(selected_features)
-            if local_accuracy > global_accuracy:
-                global_accuracy = local_accuracy
-                global_features[:] = considered_features
-                print("\nFeature set"+considered_features+"was best, with accuracy"+local_accuracy)
-            else:
-                print("\nFeature set"+considered_features+"was best, with accuracy"+local_accuracy)
-                print("\nFeature set {} was best, with accuracy {}\n".format(considered_features, local_accuracy))
+            if accuracy > best_local_accuracy:
+                best_local_accuracy = accuracy
+                best_local_feature = feature_idx
 
-    df.to_csv(filename+"_forward.csv", encoding='utf-8', index=False, sep =';')
-    print("The best features are "+global_features+" which has an accuracy of" + global_accuracy)
+        if best_local_feature is None:
+            break
+
+        selected.append(best_local_feature)
+        print(f"Selected feature set this round: {selected} ({best_local_accuracy:.4f}%)")
+
+        if best_local_accuracy > best_global_accuracy:
+            best_global_accuracy = best_local_accuracy
+            best_global_features = selected.copy()
+
+    output_path = f"{run_name}_forward.csv"
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["features", "accuracy"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(
+        f"Forward selection best features: {best_global_features} "
+        f"with accuracy {best_global_accuracy:.4f}%"
+    )
+    return best_global_features, best_global_accuracy
